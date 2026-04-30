@@ -20,6 +20,22 @@ When running as a subagent or delegated task, minimize file reads:
 - Only read reference files when you need exact copy-paste artifacts (see Read Policy below)
 - Do NOT read workflow docs (`references/workflows/`) — their content is inlined here
 
+## Cortex Service Creation — Mandatory Copy Rule
+
+**HARD RULE — NO EXCEPTIONS:**
+When creating Cortex AI service macros, agent specs, or DDL, you MUST:
+1. **Read the corresponding reference file** from the Reference File Read Policy table BEFORE writing any code
+2. **Use the reference file as the structural template** — adapt placeholders to the user's domain but do NOT restructure, reorder, or rewrite the pattern
+3. **Preserve the exact macro signature, statement flow, and DDL syntax** from the reference
+
+**Prohibited behaviors:**
+- Writing `CREATE AGENT`, `CREATE CORTEX SEARCH SERVICE`, `ALTER AGENT`, or any Cortex service DDL from memory or general knowledge
+- Changing the macro parameter list, statement execution order, or Jinja patterns (e.g., `call statement` / `load_result` / `run_query` flow)
+- Substituting different Snowflake SQL patterns that achieve the same result but differ structurally from the reference
+- Inventing DDL clauses, parameters, or syntax not present in the reference files
+
+**If the reference file read fails**, stop and inform the user that the reference file is required. Do NOT proceed by improvising.
+
 ## Prerequisites
 
 - Snowflake account with permissions for databases, schemas, tables, views, stages, tasks, UDFs
@@ -28,7 +44,7 @@ When running as a subagent or delegated task, minimize file reads:
 
 ## Pre-Scenario Step: External Access Integration
 
-Ask for the integration name. If none exists, provide:
+**STOP AND ASK** the user for the integration name. Wait for their response before continuing. If none exists, provide the creation SQL below and ask them to confirm it was created before moving on.
 
 ```sql
 USE ROLE ACCOUNTADMIN;
@@ -49,10 +65,14 @@ Verify `snow` CLI version supports `--external-access-integration` (`snow --vers
 
 ## Pre-Scenario Step: Snowflake Intelligence Toggle
 
+**STOP AND ASK** the user: "Will this pipeline use Snowflake Intelligence? If yes, provide the SI object name."
+
 - **If yes**: Record SI object name. Set `toggle_si_agent_deployment: true`, `snowflake_intelligence_object: '<name>'`.
 - **If no** (default): `toggle_si_agent_deployment: false`.
 
 ## Pre-Scenario Step: Iceberg Table Format Toggle
+
+**STOP AND ASK** the user: "Will this pipeline use Iceberg table format? If yes, I'll need the external volume name, catalog integration name, and confirmation that dbt-snowflake 1.10+ is installed."
 
 - **If yes**: Collect:
   - **External volume** (must exist). Example:
@@ -84,6 +104,30 @@ Verify `snow` CLI version supports `--external-access-integration` (`snow --vers
 
 - **If no** (default): `iceberg_enabled: false`, `iceberg_catalog_name: ''`.
 
+## Pre-Scenario Confirmation Gate
+
+**HARD GATE — DO NOT PROCEED PAST THIS POINT WITHOUT USER CONFIRMATION.**
+
+Before entering any scenario, you MUST:
+
+1. **Present a summary of all collected inputs** to the user in a structured format:
+
+   ```
+   === Confirmed Inputs ===
+   External Access Integration: <name or "needs creation">
+   Snowflake Intelligence: <enabled/disabled> [object name if enabled]
+   Iceberg Table Format: <enabled/disabled> [ext volume, catalog integration, dbt version if enabled]
+   Detected Scenario: <Net New / Extension / Migration>
+   ```
+
+2. **Ask the user to explicitly confirm** these inputs are correct before proceeding.
+
+3. **If any input is missing or unclear**, ask for it now. Do NOT assume defaults without stating them and getting confirmation.
+
+4. **Do NOT begin any scenario step** (scaffolding, model creation, etc.) until the user replies with confirmation.
+
+**Why this matters:** Incorrect inputs propagate through the entire pipeline — wrong integration names break deployment, wrong Iceberg settings produce invalid configs, wrong scenario selection wastes all downstream work.
+
 ## Scenario Detection
 
 | Scenario           | Workflow                                                     |
@@ -114,7 +158,12 @@ You **MUST** load it for any `snow dbt` command.
 
 ## Scenario 1: Net New
 
-> **GATE:** Complete all pre-scenario steps first.
+> **GATE — BLOCKED UNTIL CONFIRMED:** Do NOT execute any step below until:
+> 1. All pre-scenario steps are complete
+> 2. The Pre-Scenario Confirmation Gate summary has been presented to the user
+> 3. The user has explicitly confirmed the inputs
+>
+> If you have not done this, STOP NOW and go back to the Pre-Scenario Confirmation Gate.
 
 ### Step 1: Gather Data Source Context
 
@@ -285,6 +334,8 @@ Include `data_freshness_checks` in `TABLES()` and add freshness summary metric. 
 
 ### Step 7: Create Cortex Search Macro (if applicable)
 
+> **GATE — MANDATORY READ:** Before writing ANY search service code, you MUST read `scripts/example_create_document_search_sevice.sql`. Use its exact macro structure. Adapt only the model name in `{{ ref() }}`, the `ATTRIBUTES` list, and the `SELECT` columns to match the user's schema. Do NOT write the macro from memory.
+
 Driven by Cortex Search eligibility from Step 1.
 
 - **Staged files**: Doc processing models (Steps 3-5) produce chunk column. Use it as `search_column`.
@@ -312,7 +363,19 @@ Macro template (`macros/create_cortex_search_service.sql`):
 
 Customize `ATTRIBUTES` (add `CATEGORY` etc.) and `AS (SELECT ...)` source for your chunked model.
 
+**POST-STEP VALIDATION — Search Macro:** Before proceeding, verify:
+- [ ] You read `scripts/example_create_document_search_sevice.sql` before writing the macro
+- [ ] The macro signature matches the reference: `create_document_search_service(service_name, search_wh, search_column, target_lag, embedding_model)`
+- [ ] The DDL uses `CREATE OR REPLACE CORTEX SEARCH SERVICE` with `ON`, `ATTRIBUTES`, `WAREHOUSE`, `TARGET_LAG`, `EMBEDDING_MODEL`, and `AS (SELECT ...)` — no invented clauses
+- [ ] The macro uses `{% set sql %}...{% endset %}` then `{% do run_query(sql) %}` — not a different execution pattern
+
 ### Step 8: Create Cortex Agent Macro + Spec
+
+> **GATE — MANDATORY READ:** Before writing ANY agent macro or spec code:
+> 1. Read `scripts/example_create_cortex_agent.sql` — use its exact macro structure
+> 2. Read `references/templates/example-agent-spec.yml` — use its exact YAML structure
+>
+> Do NOT write these artifacts from memory. The macro uses a specific `call statement` / `load_result` / `run_query` flow and a `$$` delimiter pattern that MUST be preserved exactly.
 
 1. Ensure `READ_STAGE_FILE` UDF exists in `dbt_project_deployments` (create from `scripts/example_read_stage_file.sql` if missing).
 2. Create `macros/create_cortex_agent.sql` — idempotent create/alter macro. Copy from `scripts/example_create_cortex_agent.sql`. **Indentation gotcha:** `{{ agent_spec['data'][0][0] }}` must start at column 0 (no leading whitespace) inside `$$` delimiters — Jinja indentation breaks YAML parsing.
@@ -337,6 +400,14 @@ PUT file://<local_path>/cortex_agents/<spec>.yml @<DATABASE>.gold_zone.agent_spe
 
 When no document data: omit `cortex_search` tool entry, its `tool_resources` entry, and search-related instructions from the spec.
 
+**POST-STEP VALIDATION — Agent Macro + Spec:** Before proceeding, verify:
+- [ ] You read `scripts/example_create_cortex_agent.sql` and `references/templates/example-agent-spec.yml` before writing
+- [ ] The macro uses the exact `call statement('agent_spec_builder')` → `load_result('agent_spec_builder')` → `call statement('agent_exists')` → `load_result('agent_exists')` → `set cortex_agent_ddl` → `run_query(cortex_agent_ddl)` flow
+- [ ] `{{ agent_spec['data'][0][0] }}` starts at column 0 (no leading whitespace) inside `$$` delimiters
+- [ ] The agent spec YAML follows the structure from `example-agent-spec.yml`: `models`, `orchestration.budget`, `instructions.response`, `instructions.orchestration`, `tools[]`, `tool_resources`
+- [ ] `tools[].tool_spec.name` entries match `tool_resources` keys exactly
+- [ ] No Cortex DDL syntax was invented (e.g., no made-up clauses or parameters)
+
 ### Step 9: Create Schema YAML Files
 
 One `.yml` per model: description, columns, tests (`not_null`, `unique`, `accepted_values`).
@@ -344,13 +415,18 @@ One `.yml` per model: description, columns, tests (`not_null`, `unique`, `accept
 ### Step 10: Deploy
 
 **CHECKPOINT:** Confirm readiness. Summarize models, macros, Cortex services.
-Proceed to [Final Step](#final-step-all-scenarios-provision-database-and-deploy).
+**You MUST now proceed to [Final Step](#final-step-all-scenarios-provision-database-and-deploy).** The pipeline is not complete until all 5 deployment substeps are executed.
 
 ---
 
 ## Scenario 2: Extension
 
-> **GATE:** Complete all pre-scenario steps first.
+> **GATE — BLOCKED UNTIL CONFIRMED:** Do NOT execute any step below until:
+> 1. All pre-scenario steps are complete
+> 2. The Pre-Scenario Confirmation Gate summary has been presented to the user
+> 3. The user has explicitly confirmed the inputs
+>
+> If you have not done this, STOP NOW and go back to the Pre-Scenario Confirmation Gate.
 
 ### Step 1: Explore the Existing Project
 
@@ -417,22 +493,31 @@ Same as Scenario 1 Step 6, referencing top-layer models from Step 2.
 
 ### Step 5: Create Cortex Search Macro (if applicable)
 
+> **GATE — MANDATORY READ:** Same as Scenario 1 Step 7. You MUST read `scripts/example_create_document_search_sevice.sql` before writing any search service code. Do NOT write from memory.
+
 Same eligibility logic as Scenario 1 Step 7, but inspect existing models for chunk columns.
 
 ### Step 6: Create Cortex Agent Macro + Spec
+
+> **GATE — MANDATORY READ:** Same as Scenario 1 Step 8. You MUST read `scripts/example_create_cortex_agent.sql` and `references/templates/example-agent-spec.yml` before writing any agent code. Do NOT write from memory.
 
 Same as Scenario 1 Step 8. Infer domain context from existing models.
 
 ### Step 7: Deploy
 
 **CHECKPOINT:** Confirm readiness.
-Proceed to [Final Step](#final-step-all-scenarios-provision-database-and-deploy).
+**You MUST now proceed to [Final Step](#final-step-all-scenarios-provision-database-and-deploy).** The pipeline is not complete until all 5 deployment substeps are executed.
 
 ---
 
 ## Scenario 3: Dynamic Table Migration
 
-> **GATE:** Complete all pre-scenario steps first.
+> **GATE — BLOCKED UNTIL CONFIRMED:** Do NOT execute any step below until:
+> 1. All pre-scenario steps are complete
+> 2. The Pre-Scenario Confirmation Gate summary has been presented to the user
+> 3. The user has explicitly confirmed the inputs
+>
+> If you have not done this, STOP NOW and go back to the Pre-Scenario Confirmation Gate.
 
 ### Step 1: Discover Dynamic Tables
 
@@ -474,17 +559,31 @@ See `migration-patterns.md` for config reference and `on_configuration_change` o
 
 ### Steps 5-8: Cortex Services + Deploy
 
+> **GATE — MANDATORY READ:** Before creating Cortex services, you MUST read the reference files:
+> - `scripts/example_create_document_search_sevice.sql` (for search macro)
+> - `scripts/example_create_cortex_agent.sql` (for agent macro)
+> - `references/templates/example-agent-spec.yml` (for agent spec YAML)
+>
+> Do NOT write these artifacts from memory. Use the exact structural patterns from the reference files.
+
 Follow Scenario 1 Steps 6-10. All checkpoints apply. See `task-orchestration-patterns.md` for scheduling.
+**You MUST then proceed to [Final Step](#final-step-all-scenarios-provision-database-and-deploy).** The pipeline is not complete until all 5 deployment substeps are executed.
 
 ---
 
 ## Final Step (All Scenarios): Provision Database and Deploy
 
+> **GATE — MANDATORY COMPLETION:** This section contains 5 sequential substeps that MUST ALL be executed. The pipeline is NOT deployed until every substep is complete. Do NOT stop after scaffolding code — the project must be provisioned, deployed, task graphs created, and the initial Cortex deployment triggered.
+>
+> **Do NOT skip any substep.** Do NOT treat deployment as optional or "left to the user." Execute each substep in order, pausing only at CHECKPOINTs for user confirmation, then continue.
+
 ### 1. Configure `snowflake.yml`
+
+> **GATE — MANDATORY READ:** Read `references/templates/example-snowflake-yml.yml` before writing. Use its exact structure.
 
 From `references/templates/example-snowflake-yml.yml`. Populate database, warehouse, role.
 
-**CHECKPOINT:** Present `snowflake.yml` for review.
+**CHECKPOINT:** Present `snowflake.yml` for review. Wait for user confirmation before continuing.
 
 ### 2. Create Database and Schemas
 
@@ -500,9 +599,13 @@ SHOW EXTERNAL VOLUMES LIKE '<name>';
 SHOW CATALOG INTEGRATIONS LIKE '<name>';
 ```
 
+**STOP AND CONFIRM:** Verify the SQL executed successfully before continuing. If errors occurred, resolve them before proceeding.
+
 ### 3. Create the `READ_STAGE_FILE` UDF
 
 Deploy into `DBT_PROJECT_DEPLOYMENTS` from `scripts/example_read_stage_file.sql`.
+
+**STOP AND CONFIRM:** Verify the UDF was created successfully before continuing.
 
 ### 4. Deploy the dbt Project
 
@@ -518,7 +621,11 @@ snow dbt deploy <project_name> \
 
 **CHECKPOINT:** Confirm deployment: `snow dbt list --in schema DBT_PROJECT_DEPLOYMENTS --database <DATABASE>`
 
+**STOP AND CONFIRM:** Do NOT proceed to task graphs until the dbt project deployment is verified.
+
 ### 5. Deploy Task Graphs
+
+> **GATE — MANDATORY READ:** Read `references/workflows/task-orchestration-patterns.md` and `scripts/example_deploy_cortex_tasks.sql` before writing task graph SQL. Use the exact patterns from the reference files.
 
 See `references/workflows/task-orchestration-patterns.md` and `scripts/example_deploy_cortex_tasks.sql`.
 
@@ -535,32 +642,16 @@ Parameterize via `snowflake.yml` env vars. Lifecycle: suspend root-first, resume
 SHOW TASKS IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
 ```
 
-Trigger DAG 3 for initial Cortex deployment:
-```sql
-EXECUTE TASK <DATABASE>.DBT_PROJECT_DEPLOYMENTS.ROOT_DEPLOY_CORTEX;
-```
 
----
+**POST-DEPLOY VALIDATION — Final Checklist:** Before marking the task complete, verify ALL of the following:
+- [ ] `snowflake.yml` was created and reviewed by the user
+- [ ] Database and schemas were provisioned via `example_sysadmin_objects.sql`
+- [ ] `READ_STAGE_FILE` UDF was created in `DBT_PROJECT_DEPLOYMENTS`
+- [ ] dbt project was deployed via `snow dbt deploy` and confirmed via `snow dbt list`
+- [ ] Task graphs were created and resumed
+- [ ] `SHOW TASKS` confirms all tasks are in a `started` state
 
-## Validation Checklist
-
-Run before deployment:
-
-1. All `{{ ref() }}` calls point to existing models
-2. `packages.yml` includes `Snowflake-Labs/dbt_semantic_view` (pinned)
-3. `dbt_project.yml` has `semantic_views` config block
-4. `cortex_agents/` directory contains agent spec YAML
-5. Agent spec is well-formed YAML (parse before staging)
-6. Spec references correct fully qualified Semantic View and Search service names
-7. `tools[].tool_spec.name` entries match `tool_resources` keys
-8. `READ_STAGE_FILE` UDF exists in `<DATABASE>.dbt_project_deployments`
-9. `dbt_project_deployments` schema exists
-10. Agent spec stage exists (e.g., `<DATABASE>.gold_zone.agent_specs`)
-11. Every tag in task orchestration SQL (`--select tag:<name>`) has matching models
-12. Use `dbt-projects-on-snowflake` bundled skill to deploy and run
-13. `data_freshness_checks` model and `attach_freshness_dmf` macro exist
-14. DMF post-hooks only on `table`/`incremental`/`dynamic_table` (not views)
-15. If Iceberg: `catalogs.yml` exists, gold-zone has `+catalog`, dbt-snowflake 1.10+
+**If any item above is incomplete, go back and complete it now. The pipeline is NOT done until every item is checked.**
 
 ---
 
@@ -584,5 +675,3 @@ Read ONLY when you need exact syntax not available inline above:
 | snowflake.yml template | `references/templates/example-snowflake-yml.yml` |
 | DT migration patterns | `references/workflows/migration-patterns.md` (Scenario 3 only) |
 | Task orchestration patterns | `references/workflows/task-orchestration-patterns.md` (deploy step only) |
-
-The following workflow docs were inlined into this file and removed: `net-new-patterns.md`, `extension-patterns.md`, `semantic-view-patterns.md`, `cortex-agent-patterns.md`, `conventions.md`. Only `migration-patterns.md` and `task-orchestration-patterns.md` remain in `references/workflows/`.
