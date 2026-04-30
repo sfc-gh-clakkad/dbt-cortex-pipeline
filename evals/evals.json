@@ -95,32 +95,28 @@
       "id": 6,
       "scenario": "migration_stored_procedures",
       "prompt": "We have a data pipeline implemented as 5 Snowflake stored procedures in the REPORTING schema. They run sequentially: load_raw_data, clean_and_deduplicate, join_with_dimensions, calculate_metrics, and generate_summary. All are SQL procedures. I want to convert this to dbt with a cortex agent for analytics.",
-      "expected_output": "Detects Scenario 3b (Stored Procedure Migration). Queries Snowflake: SHOW PROCEDURES, GET_DDL for each. Extracts SELECT logic from each procedure's INSERT/CREATE TABLE AS statements. Maps execution order to dbt ref() chain. Creates models: load_raw_data (bronze), clean_and_deduplicate (silver incremental), join_with_dimensions (silver), calculate_metrics (gold), generate_summary (gold). Creates semantic view over gold tables. Creates cortex agent with cortex_analyst_text_to_sql tool. No cortex search since no document data detected.",
+      "expected_output": "Detects that the user is requesting stored procedure migration (SQL procedures). Immediately informs the user that stored procedure to dbt migration is not yet covered by this skill. Suggests the user manually extract SELECT logic from INSERT/MERGE/CREATE TABLE AS statements in each procedure, then use the Net New or Extension scenario to build dbt models with Cortex AI services. Does NOT attempt to run SHOW PROCEDURES or generate models from procedure DDL.",
       "files": [],
       "expectations": [
-        "5 dbt models created corresponding to the 5 stored procedures",
-        "Models use SELECT statements (not INSERT/MERGE/CREATE TABLE)",
-        "Models use ref() to express dependencies matching the sequential execution order",
-        "Models include '-- Migrated from: SP_<name>' comments",
-        "Models organized into appropriate zones (bronze for load_raw, silver for clean/join, gold for metrics/summary)",
-        "Semantic view created over gold zone models",
-        "No cortex search macro created (no document data)",
-        "Cortex agent spec includes cortex_analyst_text_to_sql tool"
+        "Skill identifies stored procedure migration as unsupported",
+        "Skill does NOT attempt SHOW PROCEDURES or GET_DDL('PROCEDURE',...)",
+        "Skill does NOT generate dbt models from procedure bodies",
+        "Skill suggests manual extraction of SELECT logic as a workaround",
+        "Skill offers to proceed with Net New or Extension scenario using extracted SQL"
       ]
     },
     {
       "id": 7,
       "scenario": "migration_python_procedures",
       "prompt": "We have two Python stored procedures that do data transformation using Snowpark. One cleans customer data and the other enriches it with sentiment scores using Cortex AI. Convert them to dbt models.",
-      "expected_output": "Detects Scenario 3b (Stored Procedure Migration) with Python procedures. Converts to dbt Python models using Snowpark: replaces session.table() with dbt.ref(), removes write.save_as_table() and returns DataFrame instead, adds dbt.config() for materialization. Preserves Snowpark logic including Cortex AI function calls. Flags any non-data operations for manual review.",
+      "expected_output": "Detects that the user is requesting Python stored procedure migration (Snowpark procedures). Immediately informs the user that Python stored procedure to dbt Python model migration is not yet covered by this skill. Suggests the user share the procedure bodies so the conversion can be done manually, then use this skill for the Cortex AI layer via Net New or Extension scenario. Does NOT attempt to generate dbt Python models from procedure DDL.",
       "files": [],
       "expectations": [
-        "At least one dbt Python model (.py) is created",
-        "Python models use dbt.ref() instead of session.table()",
-        "Python models return a DataFrame (no write.save_as_table())",
-        "Python models include dbt.config() for materialization settings",
-        "Cortex AI sentiment function usage is preserved in the enrichment model",
-        "Models include '-- Migrated from: SP_<name>' comment or equivalent Python docstring"
+        "Skill identifies Python stored procedure migration as unsupported",
+        "Skill does NOT attempt to convert session.table() or save_as_table()",
+        "Skill does NOT generate dbt Python models from procedure bodies",
+        "Skill suggests manual conversion of procedure logic as a workaround",
+        "Skill offers to proceed with Net New or Extension scenario for the Cortex AI layer"
       ]
     },
     {
