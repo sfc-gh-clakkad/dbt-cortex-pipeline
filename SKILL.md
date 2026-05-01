@@ -151,9 +151,6 @@ If the user's request involves migrating any of these, **stop and inform them**:
 
 Do NOT improvise migration workflows for unsupported types — no patterns exist in reference files.
 
-**IMPORTANT:** All deployment uses the `dbt-projects-on-snowflake` bundled skill.
-You **MUST** load it for any `snow dbt` command.
-
 ---
 
 ## Scenario 1: Net New
@@ -415,7 +412,7 @@ One `.yml` per model: description, columns, tests (`not_null`, `unique`, `accept
 ### Step 10: Deploy
 
 **CHECKPOINT:** Confirm readiness. Summarize models, macros, Cortex services.
-**You MUST now proceed to [Final Step](#final-step-all-scenarios-provision-database-and-deploy).** The pipeline is not complete until all 5 deployment substeps are executed.
+**You MUST now proceed to [Final Step](#final-step-all-scenarios-generate-deployment-sql).** The pipeline is not complete until the deployment SQL file is generated and presented to the user.
 
 ---
 
@@ -506,7 +503,7 @@ Same as Scenario 1 Step 8. Infer domain context from existing models.
 ### Step 7: Deploy
 
 **CHECKPOINT:** Confirm readiness.
-**You MUST now proceed to [Final Step](#final-step-all-scenarios-provision-database-and-deploy).** The pipeline is not complete until all 5 deployment substeps are executed.
+**You MUST now proceed to [Final Step](#final-step-all-scenarios-generate-deployment-sql).** The pipeline is not complete until the deployment SQL file is generated and presented to the user.
 
 ---
 
@@ -567,15 +564,15 @@ See `migration-patterns.md` for config reference and `on_configuration_change` o
 > Do NOT write these artifacts from memory. Use the exact structural patterns from the reference files.
 
 Follow Scenario 1 Steps 6-10. All checkpoints apply. See `task-orchestration-patterns.md` for scheduling.
-**You MUST then proceed to [Final Step](#final-step-all-scenarios-provision-database-and-deploy).** The pipeline is not complete until all 5 deployment substeps are executed.
+**You MUST then proceed to [Final Step](#final-step-all-scenarios-generate-deployment-sql).** The pipeline is not complete until the deployment SQL file is generated and presented to the user.
 
 ---
 
-## Final Step (All Scenarios): Provision Database and Deploy
+## Final Step (All Scenarios): Generate Deployment SQL
 
-> **GATE — MANDATORY COMPLETION:** This section contains 5 sequential substeps that MUST ALL be executed. The pipeline is NOT deployed until every substep is complete. Do NOT stop after scaffolding code — the project must be provisioned, deployed, task graphs created, and the initial Cortex deployment triggered.
+> **GATE — MANDATORY COMPLETION:** This section MUST be completed. Do NOT stop after scaffolding code — the agent must generate the deployment SQL file and present it to the user with execution instructions.
 >
-> **Do NOT skip any substep.** Do NOT treat deployment as optional or "left to the user." Execute each substep in order, pausing only at CHECKPOINTs for user confirmation, then continue.
+> **Do NOT skip any substep.** Generate the complete deployment file, then present it with privilege requirements and execution directions.
 
 ### 1. Configure `snowflake.yml`
 
@@ -585,73 +582,111 @@ From `references/templates/example-snowflake-yml.yml`. Populate database, wareho
 
 **CHECKPOINT:** Present `snowflake.yml` for review. Wait for user confirmation before continuing.
 
-### 2. Create Database and Schemas
+### 2. Generate the Deployment SQL File
 
- Run `scripts/example_provision_objects.sql` (creates database, BRONZE_ZONE, SILVER_ZONE, GOLD_ZONE, DBT_PROJECT_DEPLOYMENTS, stages, streams). Uses the session's current primary role. Ensure this role has CREATE DATABASE privileges (or the database already exists).
+> **GATE — MANDATORY READ:** Read `scripts/example_provision_objects.sql`, `scripts/example_read_stage_file.sql`, `references/workflows/task-orchestration-patterns.md`, and `scripts/example_deploy_cortex_tasks.sql` before generating. Use the exact patterns from these reference files.
 
-```bash
-snow sql -f scripts/example_provision_objects.sql
-```
+Generate a single `deploy.sql` file containing all SQL required to deploy the pipeline. The file MUST include the following sections **in this order**, each separated by a section header comment:
 
-If Iceberg enabled, verify external volume and catalog integration exist:
+#### Section 1: Header & Privileges
+
+Include a block comment at the top documenting:
+- Purpose of the file
+- Required privileges for the executing role:
+  - `CREATE DATABASE` (or ownership of an existing database)
+  - `CREATE SCHEMA` on the target database
+  - `CREATE STAGE`, `CREATE STREAM` on target schemas
+  - `CREATE FUNCTION` on `DBT_PROJECT_DEPLOYMENTS` schema
+  - `CREATE DBT PROJECT` on `DBT_PROJECT_DEPLOYMENTS` schema
+  - `CREATE TASK` on `DBT_PROJECT_DEPLOYMENTS` schema
+  - `USAGE` on the warehouse
+  - `USAGE` on the external access integration
+- Execution instructions: `snow sql -f deploy.sql` (via Snowflake CLI) or paste into a Snowflake worksheet
+- Note that the executing role will own all created objects
+
+#### Section 2: Database & Schema Provisioning
+
+Generate from the pattern in `scripts/example_provision_objects.sql`:
+- `CREATE OR REPLACE DATABASE`
+- `CREATE OR REPLACE SCHEMA` for BRONZE_ZONE, SILVER_ZONE, GOLD_ZONE, DBT_PROJECT_DEPLOYMENTS
+- Stage definitions (csv_stage, documents, agent_specs)
+- Stream definition (documents_stream)
+
+#### Section 3: READ_STAGE_FILE UDF
+
+Generate from `scripts/example_read_stage_file.sql`:
+- `CREATE OR REPLACE FUNCTION` in the `DBT_PROJECT_DEPLOYMENTS` schema
+- Use fully qualified name: `<DATABASE>.DBT_PROJECT_DEPLOYMENTS.READ_STAGE_FILE`
+
+#### Section 4: Upload Agent Spec
+
+- `PUT` command to upload agent spec YAML to the agent_specs stage
+
+#### Section 5: Deploy dbt Project
+
+Generate a `CREATE OR REPLACE DBT PROJECT` statement:
+
 ```sql
-SHOW EXTERNAL VOLUMES LIKE '<name>';
-SHOW CATALOG INTEGRATIONS LIKE '<name>';
+CREATE OR REPLACE DBT PROJECT <DATABASE>.DBT_PROJECT_DEPLOYMENTS.<project_name>
+  FROM SOURCE
+  REPOSITORY = '<DATABASE>.DBT_PROJECT_DEPLOYMENTS.<git_repo_name>'
+  OPERATING_WAREHOUSE = '<WAREHOUSE>'
+  EXTERNAL_ACCESS_INTEGRATIONS = ('<INTEGRATION_NAME>');
 ```
 
-**STOP AND CONFIRM:** Verify the SQL executed successfully before continuing. If errors occurred, resolve them before proceeding.
+Adapt to the user's project configuration. If the project is deployed from a local source rather than a git repository, use the appropriate `FROM` clause.
 
-### 3. Create the `READ_STAGE_FILE` UDF
+#### Section 6: Task DAGs
 
-Deploy into `DBT_PROJECT_DEPLOYMENTS` from `scripts/example_read_stage_file.sql`.
-
-**STOP AND CONFIRM:** Verify the UDF was created successfully before continuing.
-
-### 4. Deploy the dbt Project
-
-**MUST load `dbt-projects-on-snowflake` bundled skill first.**
-
-```bash
-snow dbt deploy <project_name> \
-  --source /path/to/dbt/project \
-  --database <DATABASE> \
-  --schema DBT_PROJECT_DEPLOYMENTS \
-  --external-access-integration <INTEGRATION_NAME>
-```
-
-**CHECKPOINT:** Confirm deployment: `snow dbt list --in schema DBT_PROJECT_DEPLOYMENTS --database <DATABASE>`
-
-**STOP AND CONFIRM:** Do NOT proceed to task graphs until the dbt project deployment is verified.
-
-### 5. Deploy Task Graphs
-
-> **GATE — MANDATORY READ:** Read `references/workflows/task-orchestration-patterns.md` and `scripts/example_deploy_cortex_tasks.sql` before writing task graph SQL. Use the exact patterns from the reference files.
-
-See `references/workflows/task-orchestration-patterns.md` and `scripts/example_deploy_cortex_tasks.sql`.
-
-Create up to 3 DAGs:
+Generate from patterns in `references/workflows/task-orchestration-patterns.md` and `scripts/example_deploy_cortex_tasks.sql`. Include up to 3 DAGs:
 
 1. **DAG 1: Scheduled Refresh** — CRON → compile → `run --select tag:daily`
 2. **DAG 2: Stream-Triggered Docs** (if documents) — `SYSTEM$STREAM_HAS_DATA` → `run --select tag:document_processing`
 3. **DAG 3: Manual Cortex Deploy** — `EXECUTE TASK root_deploy_cortex` → semantic view + search + agent in parallel
 
-Parameterize via `snowflake.yml` env vars. Lifecycle: suspend root-first, resume child-first.
+Parameterize using `snowflake.yml` env vars (via `<% ctx.env.* %>` templating).
 
-**CHECKPOINT:** Resume tasks, confirm active:
+#### Section 7: Task Lifecycle — Resume
+
+Include `ALTER TASK ... RESUME` statements in **child-first order** so the DAGs become active.
+
+#### Section 8: Verification Queries (commented out)
+
+Include commented-out verification queries the user can run after execution:
 ```sql
-SHOW TASKS IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
+-- SHOW SCHEMAS IN DATABASE <DATABASE>;
+-- SHOW STAGES IN SCHEMA <DATABASE>.BRONZE_ZONE;
+-- SHOW FUNCTIONS LIKE 'READ_STAGE_FILE' IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
+-- SHOW DBT PROJECTS IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
+-- SHOW TASKS IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
 ```
 
+If Iceberg is enabled, also include:
+```sql
+-- SHOW EXTERNAL VOLUMES LIKE '<name>';
+-- SHOW CATALOG INTEGRATIONS LIKE '<name>';
+```
 
-**POST-DEPLOY VALIDATION — Final Checklist:** Before marking the task complete, verify ALL of the following:
-- [ ] `snowflake.yml` was created and reviewed by the user
-- [ ] Database and schemas were provisioned via `example_provision_objects.sql`
-- [ ] `READ_STAGE_FILE` UDF was created in `DBT_PROJECT_DEPLOYMENTS`
-- [ ] dbt project was deployed via `snow dbt deploy` and confirmed via `snow dbt list`
-- [ ] Task graphs were created and resumed
-- [ ] `SHOW TASKS` confirms all tasks are in a `started` state
+### 3. Present Deployment File to User
 
-**If any item above is incomplete, go back and complete it now. The pipeline is NOT done until every item is checked.**
+**CHECKPOINT:** Present the generated `deploy.sql` file for review. Alongside the file, provide:
+
+1. **Execution instructions:**
+   - Via Snowflake CLI: `snow sql -f deploy.sql`
+   - Via Snowflake worksheet: paste and run in order
+   - Ensure the session role has the privileges listed in the file header
+
+2. **Pre-execution checklist:**
+   - [ ] `snowflake.yml` was created and reviewed
+   - [ ] The executing role has the required privileges (see file header)
+   - [ ] External access integration exists (if using Cortex services)
+   - [ ] External volume and catalog integration exist (if Iceberg enabled)
+
+3. **Post-execution verification:**
+   - Uncomment and run the verification queries in Section 8
+   - Confirm `SHOW TASKS` shows all tasks in a `started` state
+
+Wait for user confirmation before marking the pipeline complete.
 
 ---
 

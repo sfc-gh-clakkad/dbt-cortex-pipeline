@@ -30,7 +30,7 @@ Builds dbt pipelines on Snowflake combining data models with Cortex AI services 
 ### Infrastructure
 - **Schemas**: BRONZE_ZONE, SILVER_ZONE, GOLD_ZONE, DBT_PROJECT_DEPLOYMENTS
 - **Task DAGs**: CRON refresh, stream-triggered docs, manual Cortex deploy
-- **Deployment**: `snow dbt deploy` as Snowflake-native object
+- **Deployment**: Generated as a single `deploy.sql` file for user execution
 
 ### Optional Features
 | Feature | Toggle |
@@ -53,7 +53,7 @@ Builds dbt pipelines on Snowflake combining data models with Cortex AI services 
 - **`READ_STAGE_FILE` UDF**: Must exist in `dbt_project_deployments` before agent deploy
 - **Package pinning**: `dbt_semantic_view` version must be pinned
 - **Document AI placement**: `AI_EXTRACT` in silver; `AI_PARSE_DOCUMENT` + chunking in gold
-- **Deployment**: Must load `dbt-projects-on-snowflake` skill for any `snow dbt` command
+- **Deployment**: All deployment SQL is generated into a single file for the user to review and execute
 
 ## User Checkpoints
 
@@ -71,16 +71,15 @@ Builds dbt pipelines on Snowflake combining data models with Cortex AI services 
 | **Scripts** (9) | `example_provision_objects.sql`, `example_read_stage_file.sql`, `example_create_cortex_agent.sql`, `example_create_document_search_sevice.sql`, `example_deploy_cortex_tasks.sql`, `example_document_full_extracts.sql`, `example_document_question_extracts.py`, `example_semantic_view.sql`, `example_attach_freshness_dmf.sql` |
 | **Workflows** (7) | `net-new-patterns.md`, `extension-patterns.md`, `migration-patterns.md`, `semantic-view-patterns.md`, `cortex-agent-patterns.md`, `task-orchestration-patterns.md`, `conventions.md` |
 
-## Relationship to `dbt-projects-on-snowflake`
+## Deployment Output
 
-This skill **designs + builds** the dbt project, then hands off to `dbt-projects-on-snowflake` for **deploy + operate** (`snow dbt deploy/execute`, task scheduling, monitoring).
+This skill generates a single `deploy.sql` file containing all provisioning and deployment SQL. The user reviews and executes it directly (via `snow sql -f deploy.sql` or a Snowflake worksheet). The file includes privilege requirements, `CREATE OR REPLACE DBT PROJECT` DDL, task DAGs, and verification queries.
 
 | User Request | Skill |
 |---|---|
 | "Build dbt project with Cortex Agent" | `dbt-cortex-pipeline` |
 | "Add semantic view to existing dbt project" | `dbt-cortex-pipeline` (Extension) |
 | "Convert Dynamic Tables to dbt with Cortex" | `dbt-cortex-pipeline` (Migration) |
-| "Deploy/run/schedule/debug dbt project" | `dbt-projects-on-snowflake` |
 
 ---
 
@@ -92,5 +91,5 @@ This skill **designs + builds** the dbt project, then hands off to `dbt-projects
 - Standalone Cortex Agent without dbt (`cortex-agent` skill)
 - Standalone semantic view SQL without dbt (`semantic-view` skill)
 - Debugging existing dbt models
-- Deploying already-built projects (`dbt-projects-on-snowflake` skill)
+- Deploying already-built projects (use `snow dbt deploy` or the generated `deploy.sql`)
 - Single AI function queries without pipeline (`cortex-ai-functions` skill)

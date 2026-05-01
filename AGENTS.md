@@ -22,7 +22,7 @@
     models; every model tag is selected by at least one task
 
 ### Deployment
-12. Use `dbt-projects-on-snowflake` bundled skill to deploy and run
+12. Deployment SQL is generated into a single `deploy.sql` file for user execution
 
 ### Data Freshness Monitoring
 13. `data_freshness_checks` model exists
