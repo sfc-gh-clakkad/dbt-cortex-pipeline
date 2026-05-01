@@ -10,7 +10,12 @@ CREATE OR REPLACE TASK root_deploy_cortex
     "dbt_project_name": "my_project",
     "target": "dev",
     "cortex_search_wh": "search_wh",
-    "cortex_search_service_name": "my_search_service"
+    "cortex_search_service_name": "my_search_service",
+    "database": "MY_DB",
+    "schema": "gold_zone",
+    "stage_name": "agent_specs",
+    "agent_spec_file": "my_agent_v100.yml"
+
   }'
   AS SELECT 1;
 
@@ -56,14 +61,7 @@ CREATE OR REPLACE TASK deploy_search_service
 -- Child 3: Deploy Cortex Agent (runs dbt macro)
 CREATE OR REPLACE TASK deploy_cortex_agent
   WAREHOUSE = my_wh
-  CONFIG = '{
-    "dbt_project_name": "my_project",
-    "target": "dev",
-    "database": "MY_DB",
-    "schema": "gold_zone",
-    "stage_name": "agent_specs",
-    "agent_spec_file": "my_agent_v100.yml"
-  }'
+  AFTER root_deploy_cortex
   AS
   EXECUTE IMMEDIATE
   $$

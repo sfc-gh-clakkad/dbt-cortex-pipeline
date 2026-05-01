@@ -22,18 +22,19 @@
     models; every model tag is selected by at least one task
 
 ### Deployment
-12. Deployment SQL is generated into a single `deploy.sql` file for user execution
+12. Infrastructure SQL is generated into `deploy.sql` (all objects except the dbt project)
+13. User is guided to deploy the dbt project via `snow dbt deploy` (using `dbt-projects-on-snowflake` skill)
 
 ### Data Freshness Monitoring
-13. `data_freshness_checks` model exists
-14. `attach_freshness_dmf` macro exists
-15. Models with freshness post-hooks use `materialized='table'`,
+14. `data_freshness_checks` model exists
+15. `attach_freshness_dmf` macro exists
+16. Models with freshness post-hooks use `materialized='table'`,
     `materialized='incremental'`, or `materialized='dynamic_table'`
     (DMFs cannot attach to views)
 
 ### Iceberg Configuration (if applicable)
-16. If Iceberg is enabled, `catalogs.yml` exists at project root with valid
+17. If Iceberg is enabled, `catalogs.yml` exists at project root with valid
     external volume and catalog integration references
-17. If Iceberg is enabled, gold-zone config in `dbt_project.yml` includes
+18. If Iceberg is enabled, gold-zone config in `dbt_project.yml` includes
     `+catalog: <iceberg_catalog_name>`
-18. If Iceberg is enabled, dbt-snowflake adapter version is 1.10+
+19. If Iceberg is enabled, dbt-snowflake adapter version is 1.10+

@@ -187,7 +187,7 @@ Create these files (use `references/templates/` for full examples if needed):
 
 1. **dbt_project.yml** — from `references/templates/example-dbt-project.yml`. Configure medallion zones, `vars` for stage paths/doc parsing.
 2. **profiles.yml** — from `references/templates/example-profiles.yml`. No `password` or `env_var()`.
-3. **packages.yml** — include `Snowflake-Labs/dbt_semantic_view`, pinned (`snow dbt list-packages --like 'dbt_semantic_view'`).
+3. **packages.yml** — from `references/templates/example-packages.yml`. Must include `Snowflake-Labs/dbt_semantic_view`, pinned.
 4. **macros/generate_schema_name.sql**:
    ```sql
    {% macro generate_schema_name(custom_schema_name, node) -%}
@@ -412,7 +412,7 @@ One `.yml` per model: description, columns, tests (`not_null`, `unique`, `accept
 ### Step 10: Deploy
 
 **CHECKPOINT:** Confirm readiness. Summarize models, macros, Cortex services.
-**You MUST now proceed to [Final Step](#final-step-all-scenarios-generate-deployment-sql).** The pipeline is not complete until the deployment SQL file is generated and presented to the user.
+**You MUST now proceed to [Final Step](#final-step-all-scenarios-generate-deployment-sql).** The pipeline is not complete until the infrastructure SQL is generated and the user is guided through dbt project deployment.
 
 ---
 
@@ -461,7 +461,7 @@ Find the most refined models (gold/marts/analytics). Read SQL to understand colu
 
 ### Step 3: Add Prerequisites
 
-1. Add `Snowflake-Labs/dbt_semantic_view` to `packages.yml` (pinned).
+1. Create/update `packages.yml` from `references/templates/example-packages.yml`. Must include `Snowflake-Labs/dbt_semantic_view`, pinned.
 2. Add `semantic_views` section to `dbt_project.yml`.
 3. Ensure `generate_schema_name` macro produces clean names (see Scenario 1 Step 2 for template).
 
@@ -503,7 +503,7 @@ Same as Scenario 1 Step 8. Infer domain context from existing models.
 ### Step 7: Deploy
 
 **CHECKPOINT:** Confirm readiness.
-**You MUST now proceed to [Final Step](#final-step-all-scenarios-generate-deployment-sql).** The pipeline is not complete until the deployment SQL file is generated and presented to the user.
+**You MUST now proceed to [Final Step](#final-step-all-scenarios-generate-deployment-sql).** The pipeline is not complete until the infrastructure SQL is generated and the user is guided through dbt project deployment.
 
 ---
 
@@ -564,15 +564,15 @@ See `migration-patterns.md` for config reference and `on_configuration_change` o
 > Do NOT write these artifacts from memory. Use the exact structural patterns from the reference files.
 
 Follow Scenario 1 Steps 6-10. All checkpoints apply. See `task-orchestration-patterns.md` for scheduling.
-**You MUST then proceed to [Final Step](#final-step-all-scenarios-generate-deployment-sql).** The pipeline is not complete until the deployment SQL file is generated and presented to the user.
+**You MUST then proceed to [Final Step](#final-step-all-scenarios-generate-deployment-sql).** The pipeline is not complete until the infrastructure SQL is generated and the user is guided through dbt project deployment.
 
 ---
 
 ## Final Step (All Scenarios): Generate Deployment SQL
 
-> **GATE — MANDATORY COMPLETION:** This section MUST be completed. Do NOT stop after scaffolding code — the agent must generate the deployment SQL file and present it to the user with execution instructions.
+> **GATE — MANDATORY COMPLETION:** This section MUST be completed. Do NOT stop after scaffolding code — the agent must generate the infrastructure SQL file and guide the user through dbt project deployment.
 >
-> **Do NOT skip any substep.** Generate the complete deployment file, then present it with privilege requirements and execution directions.
+> **Do NOT skip any substep.** Generate the infrastructure deployment file, then guide the user through dbt project deployment with the `dbt-projects-on-snowflake` skill.
 
 ### 1. Configure `snowflake.yml`
 
@@ -586,7 +586,7 @@ From `references/templates/example-snowflake-yml.yml`. Populate database, wareho
 
 > **GATE — MANDATORY READ:** Read `scripts/example_provision_objects.sql`, `scripts/example_read_stage_file.sql`, `references/workflows/task-orchestration-patterns.md`, and `scripts/example_deploy_cortex_tasks.sql` before generating. Use the exact patterns from these reference files.
 
-Generate a single `deploy.sql` file containing all SQL required to deploy the pipeline. The file MUST include the following sections **in this order**, each separated by a section header comment:
+Generate a `deploy.sql` file containing all SQL required to provision Snowflake infrastructure for the pipeline. This file does **NOT** include dbt project creation — that is handled separately via `snow dbt deploy` (see Step 4 below). The file MUST include the following sections **in this order**, each separated by a section header comment:
 
 #### Section 1: Header & Privileges
 
@@ -597,7 +597,6 @@ Include a block comment at the top documenting:
   - `CREATE SCHEMA` on the target database
   - `CREATE STAGE`, `CREATE STREAM` on target schemas
   - `CREATE FUNCTION` on `DBT_PROJECT_DEPLOYMENTS` schema
-  - `CREATE DBT PROJECT` on `DBT_PROJECT_DEPLOYMENTS` schema
   - `CREATE TASK` on `DBT_PROJECT_DEPLOYMENTS` schema
   - `USAGE` on the warehouse
   - `USAGE` on the external access integration
@@ -622,21 +621,7 @@ Generate from `scripts/example_read_stage_file.sql`:
 
 - `PUT` command to upload agent spec YAML to the agent_specs stage
 
-#### Section 5: Deploy dbt Project
-
-Generate a `CREATE OR REPLACE DBT PROJECT` statement:
-
-```sql
-CREATE OR REPLACE DBT PROJECT <DATABASE>.DBT_PROJECT_DEPLOYMENTS.<project_name>
-  FROM SOURCE
-  REPOSITORY = '<DATABASE>.DBT_PROJECT_DEPLOYMENTS.<git_repo_name>'
-  OPERATING_WAREHOUSE = '<WAREHOUSE>'
-  EXTERNAL_ACCESS_INTEGRATIONS = ('<INTEGRATION_NAME>');
-```
-
-Adapt to the user's project configuration. If the project is deployed from a local source rather than a git repository, use the appropriate `FROM` clause.
-
-#### Section 6: Task DAGs
+#### Section 5: Task DAGs
 
 Generate from patterns in `references/workflows/task-orchestration-patterns.md` and `scripts/example_deploy_cortex_tasks.sql`. Include up to 3 DAGs:
 
@@ -646,18 +631,17 @@ Generate from patterns in `references/workflows/task-orchestration-patterns.md` 
 
 Parameterize using `snowflake.yml` env vars (via `<% ctx.env.* %>` templating).
 
-#### Section 7: Task Lifecycle — Resume
+#### Section 6: Task Lifecycle — Resume
 
 Include `ALTER TASK ... RESUME` statements in **child-first order** so the DAGs become active.
 
-#### Section 8: Verification Queries (commented out)
+#### Section 7: Verification Queries (commented out)
 
 Include commented-out verification queries the user can run after execution:
 ```sql
 -- SHOW SCHEMAS IN DATABASE <DATABASE>;
 -- SHOW STAGES IN SCHEMA <DATABASE>.BRONZE_ZONE;
 -- SHOW FUNCTIONS LIKE 'READ_STAGE_FILE' IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
--- SHOW DBT PROJECTS IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
 -- SHOW TASKS IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
 ```
 
@@ -667,9 +651,11 @@ If Iceberg is enabled, also include:
 -- SHOW CATALOG INTEGRATIONS LIKE '<name>';
 ```
 
-### 3. Present Deployment File to User
+### 3. Present Infrastructure SQL to User (Step 1 of 2)
 
-**CHECKPOINT:** Present the generated `deploy.sql` file for review. Alongside the file, provide:
+**CHECKPOINT:** Present the generated `deploy.sql` file for review. This file provisions all Snowflake infrastructure objects — it does **NOT** create the dbt project itself. The dbt project deployment is a separate step (Step 2 below).
+
+Alongside the file, provide:
 
 1. **Execution instructions:**
    - Via Snowflake CLI: `snow sql -f deploy.sql`
@@ -683,10 +669,52 @@ If Iceberg is enabled, also include:
    - [ ] External volume and catalog integration exist (if Iceberg enabled)
 
 3. **Post-execution verification:**
-   - Uncomment and run the verification queries in Section 8
+   - Uncomment and run the verification queries in Section 7
    - Confirm `SHOW TASKS` shows all tasks in a `started` state
 
-Wait for user confirmation before marking the pipeline complete.
+**Wait for the user to confirm `deploy.sql` executed successfully before proceeding to Step 2.**
+
+### 4. Deploy dbt Project to Snowflake (Step 2 of 2)
+
+> **GATE — BLOCKED UNTIL STEP 1 CONFIRMED:** Do NOT proceed until the user confirms `deploy.sql` ran successfully.
+
+After the infrastructure is provisioned, guide the user to deploy the dbt project using the **`dbt-projects-on-snowflake`** skill. This skill handles project validation, upload via `snow dbt deploy`, and verification.
+
+**Instructions to the user:**
+
+Present the following deployment summary and ask them to proceed:
+
+```
+=== dbt Project Deployment ===
+Project path: <path_to_dbt_project>
+Target database: <DATABASE>
+Target schema: DBT_PROJECT_DEPLOYMENTS
+External access integration: <INTEGRATION_NAME>
+
+To deploy, run:
+  snow dbt deploy <project_name> \
+    --source <path_to_dbt_project> \
+    --database <DATABASE> \
+    --schema DBT_PROJECT_DEPLOYMENTS \
+    --external-access-integration <INTEGRATION_NAME>
+
+To verify:
+  snow dbt list --in schema DBT_PROJECT_DEPLOYMENTS --database <DATABASE>
+```
+
+**If the user needs help with deployment** (e.g., profiles.yml issues, version management, external access setup), invoke the `dbt-projects-on-snowflake` skill which provides guided workflows for:
+- Validating `profiles.yml` (no `env_var()` or `password` fields)
+- Handling external access integration requirements
+- Deploying and verifying the project
+- Managing project versions
+
+**Post-deployment verification:**
+```sql
+SHOW DBT PROJECTS IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
+SHOW VERSIONS IN DBT PROJECT <DATABASE>.DBT_PROJECT_DEPLOYMENTS.<project_name>;
+```
+
+Wait for user confirmation that the dbt project is deployed before marking the pipeline complete.
 
 ---
 
@@ -703,6 +731,7 @@ Read ONLY when you need exact syntax not available inline above:
 | Task DAG SQL | `scripts/example_deploy_cortex_tasks.sql` |
 | Database provisioning script | `scripts/example_provision_objects.sql` |
 | READ_STAGE_FILE UDF | `scripts/example_read_stage_file.sql` |
+| packages.yml template | `references/templates/example-packages.yml` |
 | dbt_project.yml template | `references/templates/example-dbt-project.yml` |
 | profiles.yml template | `references/templates/example-profiles.yml` |
 | catalogs.yml template | `references/templates/example-catalogs-yml.yml` |
