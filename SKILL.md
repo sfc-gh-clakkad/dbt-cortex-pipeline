@@ -186,7 +186,7 @@ Read any requirements documents the user provides.
 Create these files (use `references/templates/` for full examples if needed):
 
 1. **dbt_project.yml** — from `references/templates/example-dbt-project.yml`. Configure medallion zones, `vars` for stage paths/doc parsing.
-2. **profiles.yml** — from `references/templates/example-profiles.yml`. No `password` or `env_var()`.
+2. **profiles.yml** — from `references/templates/example-profiles.yml`. No `password` or `env_var()`. Use the user's current role and warehouse (from `SELECT CURRENT_ROLE(), CURRENT_WAREHOUSE()`) as defaults rather than placeholder values.
 3. **packages.yml** — from `references/templates/example-packages.yml`. Must include `Snowflake-Labs/dbt_semantic_view`, pinned.
 4. **macros/generate_schema_name.sql**:
    ```sql
@@ -578,7 +578,7 @@ Follow Scenario 1 Steps 6-10. All checkpoints apply. See `task-orchestration-pat
 
 > **GATE — MANDATORY READ:** Read `references/templates/example-snowflake-yml.yml` before writing. Use its exact structure.
 
-From `references/templates/example-snowflake-yml.yml`. Populate database, warehouse, role.
+From `references/templates/example-snowflake-yml.yml`. Populate database, warehouse, role. Use the user's current role and warehouse (from `SELECT CURRENT_ROLE(), CURRENT_WAREHOUSE()`) as defaults for `dbt_pipeline_wh` and any role references rather than placeholder values.
 
 **CHECKPOINT:** Present `snowflake.yml` for review. Wait for user confirmation before continuing.
 
@@ -633,7 +633,12 @@ Parameterize using `snowflake.yml` env vars (via `<% ctx.env.* %>` templating).
 
 #### Section 6: Task Lifecycle — Resume
 
-Include `ALTER TASK ... RESUME` statements in **child-first order** so the DAGs become active.
+Do **NOT** include `ALTER TASK ... RESUME` statements in `deploy.sql`. Tasks should be created in a suspended state. The user will resume them manually when ready. Add a comment block reminding the user how to resume tasks in child-first order, for example:
+```sql
+-- NOTE: Tasks are created in SUSPENDED state. To activate, resume in child-first order:
+-- ALTER TASK <child_task> RESUME;
+-- ALTER TASK <root_task> RESUME;
+```
 
 #### Section 7: Verification Queries (commented out)
 
