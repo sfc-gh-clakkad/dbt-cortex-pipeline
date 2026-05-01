@@ -8,7 +8,6 @@ env:
   dbt_project_name: "my_project"
   dbt_project_database: "MY_DB"
   dbt_pipeline_wh: "my_wh"
-  dbt_project_admin_role: "my_role"
   dbt_target: "dev"
   daily_refresh_cron_schedule: "USING CRON 1 0 * * * America/Toronto"
   cortex_search_wh: "search_wh"

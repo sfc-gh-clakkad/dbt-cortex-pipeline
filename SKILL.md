@@ -587,10 +587,10 @@ From `references/templates/example-snowflake-yml.yml`. Populate database, wareho
 
 ### 2. Create Database and Schemas
 
-Run `scripts/example_sysadmin_objects.sql` (creates database, BRONZE_ZONE, SILVER_ZONE, GOLD_ZONE, DBT_PROJECT_DEPLOYMENTS, stages, streams, grants). Requires `SYSADMIN`.
+ Run `scripts/example_provision_objects.sql` (creates database, BRONZE_ZONE, SILVER_ZONE, GOLD_ZONE, DBT_PROJECT_DEPLOYMENTS, stages, streams). Uses the session's current primary role. Ensure this role has CREATE DATABASE privileges (or the database already exists).
 
 ```bash
-snow sql -f scripts/example_sysadmin_objects.sql
+snow sql -f scripts/example_provision_objects.sql
 ```
 
 If Iceberg enabled, verify external volume and catalog integration exist:
@@ -645,7 +645,7 @@ SHOW TASKS IN SCHEMA <DATABASE>.DBT_PROJECT_DEPLOYMENTS;
 
 **POST-DEPLOY VALIDATION — Final Checklist:** Before marking the task complete, verify ALL of the following:
 - [ ] `snowflake.yml` was created and reviewed by the user
-- [ ] Database and schemas were provisioned via `example_sysadmin_objects.sql`
+- [ ] Database and schemas were provisioned via `example_provision_objects.sql`
 - [ ] `READ_STAGE_FILE` UDF was created in `DBT_PROJECT_DEPLOYMENTS`
 - [ ] dbt project was deployed via `snow dbt deploy` and confirmed via `snow dbt list`
 - [ ] Task graphs were created and resumed
@@ -666,7 +666,7 @@ Read ONLY when you need exact syntax not available inline above:
 | Python AI_EXTRACT model | `scripts/example_document_question_extracts.py` |
 | Document chunking SQL | `scripts/example_document_full_extracts.sql` |
 | Task DAG SQL | `scripts/example_deploy_cortex_tasks.sql` |
-| Sysadmin setup script | `scripts/example_sysadmin_objects.sql` |
+| Database provisioning script | `scripts/example_provision_objects.sql` |
 | READ_STAGE_FILE UDF | `scripts/example_read_stage_file.sql` |
 | dbt_project.yml template | `references/templates/example-dbt-project.yml` |
 | profiles.yml template | `references/templates/example-profiles.yml` |

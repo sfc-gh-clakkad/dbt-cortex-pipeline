@@ -68,7 +68,7 @@ Builds dbt pipelines on Snowflake combining data models with Cortex AI services 
 | Category | Files |
 |---|---|
 | **Templates** (7) | `example-agent-spec.yml`, `example-catalogs-yml.yml`, `example-dbt-project.yml`, `example-profiles.yml`, `example-snowflake-yml.yml`, `example-document-full-extracts.yml`, `example-document-question-extracts.yml` |
-| **Scripts** (9) | `example_sysadmin_objects.sql`, `example_read_stage_file.sql`, `example_create_cortex_agent.sql`, `example_create_document_search_sevice.sql`, `example_deploy_cortex_tasks.sql`, `example_document_full_extracts.sql`, `example_document_question_extracts.py`, `example_semantic_view.sql`, `example_attach_freshness_dmf.sql` |
+| **Scripts** (9) | `example_provision_objects.sql`, `example_read_stage_file.sql`, `example_create_cortex_agent.sql`, `example_create_document_search_sevice.sql`, `example_deploy_cortex_tasks.sql`, `example_document_full_extracts.sql`, `example_document_question_extracts.py`, `example_semantic_view.sql`, `example_attach_freshness_dmf.sql` |
 | **Workflows** (7) | `net-new-patterns.md`, `extension-patterns.md`, `migration-patterns.md`, `semantic-view-patterns.md`, `cortex-agent-patterns.md`, `task-orchestration-patterns.md`, `conventions.md` |
 
 ## Relationship to `dbt-projects-on-snowflake`
